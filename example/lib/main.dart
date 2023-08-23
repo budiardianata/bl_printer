@@ -277,15 +277,6 @@ class _MyAppState extends State<MyApp> {
       width: 350,
       height: 350,
     );
-    // builder.qrCode('hRdqrGTtB52kKZKcna2+RUO4zs4V5Z7Reh7TYrXbQ7cCdkB6Vbe0JGYsz7mU44FITqMeY5R5QOJItE6KYkgqRUNQC8vIFIyYMrXrd/a3SbM8ZVyqhkOI8zJfhQa/rbM87CRhFr/1YdCWelx1MdvSnFm98zSZKgmsrliK+Sfel2El67m4tQ6aLOU7aM1nbRT4fkcV9MUfQH9VuBWwmWf673up+eFDp8Ba27rSD13hxWvssxadWyCUCIuo2Eh58Wr8mRo5SrwfSwBf266WEiPa3T6Ce60kYPfI6bgXO/xux6ZvxXeYI57KTJER7f9BsyBuA2QigLp/Qve+PC4UDdRzSVOadzURC1Pr3FmA15KXi1UewaspvUrU9jP4D9OMqMaQetYKcb6rq7EiY4t+orVE0g==');
-    // builder.feed(1);
-    // builder.hr();
-    // builder.feed(1);
-    // builder.qrCode('hRdqrGTtB52kKZKcna2+RUO4zs4V5Z7Reh7TYrXbQ7cCdkB6Vbe0JGYsz7mU44FITqMeY5R5QOJItE6KYkgqRUNQC8vIFIyYMrXrd/a3SbM8ZVyqhkOI8zJfhQa/rbM87CRhFr/1YdCWelx1MdvSnFm98zSZKgmsrliK+Sfel2El67m4tQ6aLOU7aM1nbRT4fkcV9MUfQH9VuBWwmWf673up+eFDp8Ba27rSD13hxWvssxadWyCUCIuo2Eh58Wr8mRo5SrwfSwBf266WEiPa3T6Ce60kYPfI6bgXO/xux6ZvxXeYI57KTJER7f9BsyBuA2QigLp/Qve+PC4UDdRzSVOadzURC1Pr3FmA15KXi1UewaspvUrU9jP4D9OMqMaQetYKcb6rq7EiY4t+orVE0g==', size: 27);
-    // builder.feed(1);
-    // builder.hr();
-    // builder.feed(1);
-    // builder.qrCode('hRdqrGTtB52kKZKcna2+RUO4zs4V5Z7Reh7TYrXbQ7cCdkB6Vbe0JGYsz7mU44FITqMeY5R5QOJItE6KYkgqRUNQC8vIFIyYMrXrd/a3SbM8ZVyqhkOI8zJfhQa/rbM87CRhFr/1YdCWelx1MdvSnFm98zSZKgmsrliK+Sfel2El67m4tQ6aLOU7aM1nbRT4fkcV9MUfQH9VuBWwmWf673up+eFDp8Ba27rSD13hxWvssxadWyCUCIuo2Eh58Wr8mRo5SrwfSwBf266WEiPa3T6Ce60kYPfI6bgXO/xux6ZvxXeYI57KTJER7f9BsyBuA2QigLp/Qve+PC4UDdRzSVOadzURC1Pr3FmA15KXi1UewaspvUrU9jP4D9OMqMaQetYKcb6rq7EiY4t+orVE0g==', size: 29);
     builder.feed(1);
     builder.hr();
 
@@ -293,7 +284,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<Uint8List> convertImageToBitmap(ByteBuffer image) async {
-    final pngBytes = image.asUint8List(); 
+    final pngBytes = image.asUint8List();
     img.Image imgBitmap = img.decodeImage(Uint8List.fromList(pngBytes))!;
     img.Image resizedBitmap =
         img.copyResize(imgBitmap, width: 300); // Adjust the width as needed
