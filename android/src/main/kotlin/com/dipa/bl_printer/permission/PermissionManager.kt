@@ -3,8 +3,12 @@ package com.dipa.bl_printer.permission
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.PluginRegistry
@@ -19,18 +23,17 @@ class PermissionManager : PluginRegistry.RequestPermissionsResultListener {
     private var errorCallback: (Exception) -> Unit = {}
 
     private fun requiredPermissions(): List<String> {
-        val permission = mutableListOf(
-            Manifest.permission.BLUETOOTH,
-            Manifest.permission.BLUETOOTH_ADMIN,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
+        val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
+//            Manifest.permission.BLUETOOTH,
+//            Manifest.permission.BLUETOOTH_ADMIN,
         )
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permission.addAll(
-                listOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
-            )
+            permissions.add(Manifest.permission.BLUETOOTH_SCAN)
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
-        return permission
+        return permissions
     }
 
     private fun hasPermissions(context: Context): Boolean {
@@ -39,21 +42,46 @@ class PermissionManager : PluginRegistry.RequestPermissionsResultListener {
         }
     }
 
+    fun canRequestPermission(): Boolean {
+        activity?.let { act ->
+            return requiredPermissions().any {
+                ActivityCompat.shouldShowRequestPermissionRationale(act, it)
+            }
+        } ?: kotlin.run {
+            return false
+        }
+    }
+
+    fun updateActivity(activity: Activity) {
+        this.activity = activity
+    }
+
     fun requestPermission(
-        activity: Activity,
         onGranted: () -> Unit,
         onError: (Exception) -> Unit,
     ) {
-        if (hasPermissions(activity.applicationContext)) {
-            onGranted.invoke()
-            return
+        activity?.let {
+            if (hasPermissions(it.applicationContext)) {
+                onGranted.invoke()
+                return
+            }
+            this.resultCallback = onGranted
+            this.errorCallback = onError
+            ActivityCompat.requestPermissions(
+                it, requiredPermissions().toTypedArray(), PERMISSION_REQUEST_CODE,
+            )
+        } ?: kotlin.run {
+            onError(Exception("activity cannot be null"))
         }
-        this.activity = activity
-        this.resultCallback = onGranted
-        this.errorCallback = onError
-        ActivityCompat.requestPermissions(
-            activity, requiredPermissions().toTypedArray(), PERMISSION_REQUEST_CODE,
-        )
+    }
+
+    fun openSettingsPermission() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+
+        activity?.let {
+            intent.data = Uri.fromParts("package", it.packageName, null)
+            it.startActivity(intent)
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -62,6 +90,11 @@ class PermissionManager : PluginRegistry.RequestPermissionsResultListener {
         if (requestCode != PERMISSION_REQUEST_CODE) {
             return false
         }
+        Log.d(
+            "TAG",
+            "onRequestPermissionsResult: $requestCode ${grantResults.all { it == PackageManager.PERMISSION_GRANTED }} "
+        )
+
         if (this.activity == null) {
             errorCallback.invoke(Exception("Trying to process permission result without an valid Activity instance"))
             return false

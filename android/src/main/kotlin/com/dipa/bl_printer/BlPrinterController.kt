@@ -46,13 +46,14 @@ class BlPrinterController(private val context: Context) {
 
     val initialState: BluetoothState
         get() {
-            try {
-                return when (bluetoothAdapter?.state) {
-                    BluetoothAdapter.STATE_ON -> BluetoothState.AVAILABLE
-                    else -> BluetoothState.DISCONNECTED
+            return try {
+                when (bluetoothAdapter?.state) {
+                    BluetoothAdapter.STATE_ON -> BluetoothState.IDLE
+                    BluetoothAdapter.STATE_OFF -> BluetoothState.DISABLE
+                    else -> BluetoothState.NO_PERMISSION
                 }
             } catch (e: Exception) {
-                throw e
+                BluetoothState.NO_PERMISSION
             }
         }
 
@@ -126,7 +127,6 @@ class BlPrinterController(private val context: Context) {
                         } else if (items[i].contains("bitmap#")) {
                             val split = items[i].split("#").dropLastWhile { it.isEmpty() }
                             val img = split[1]
-                            Log.e("TAG", "print:img $img")
                             val align = split[2].toIntOrNull() ?: Printer.ALIGN_LEFT
                             val width = split[3].toIntOrNull() ?: 200
                             val height = split[4].toIntOrNull() ?: 200

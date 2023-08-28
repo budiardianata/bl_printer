@@ -6,6 +6,9 @@ import 'package:bl_printer/bl_printer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 void main() {
@@ -20,57 +23,45 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  String _platformVersion = 'Unknown';
+  StreamSubscription<BluetoothDevice>? _deviceSubscription;
+  StreamSubscription<BluetoothState>? _stateSubscription;
   List<BluetoothDevice> devices = [];
   final _blPrinterPlugin = BlPrinter();
-  bool _isEnable = false;
-  bool _hasPermission = false;
   BluetoothState status = BluetoothState(status: BluetoothStatus.disable);
 
   @override
   void initState() {
     super.initState();
+    // If the widget was removed from the tree while the asynchronous platform
+    // message was in flight, we want to discard the reply rather than calling
+    // setState to update our non-existent appearance.
+    if (!mounted) return;
     initPlatformState();
   }
 
   // Platform messages are asynchronous, so we initialize in an async method.
   Future<void> initPlatformState() async {
-    String platformVersion;
-    bool enable = false;
-    bool permission = false;
-    // Platform messages may fail, so we use a try/catch PlatformException.
-    // We also handle the message potentially returning null.
-    _blPrinterPlugin.getBluetoothStatus().listen((event) async {
-      if (event.status != BluetoothStatus.disable) {
-        final devices = await _blPrinterPlugin.devices;
-        setState(() {
-          this.devices
-            ..clear()
-            ..addAll(devices);
-        });
-      }
+    _stateSubscription = _blPrinterPlugin.bluetoothState().listen((state) {
+      print(state.status);
       setState(() {
-        status = event;
+        status = state;
       });
-    }).onError((e) {});
-    try {
-      platformVersion = await _blPrinterPlugin.getPlatformVersion() ??
-          'Unknown platform version';
-      enable = await _blPrinterPlugin.isBluetoothEnable;
-    } on PlatformException {
-      platformVersion = 'Failed to get platform version.';
-    }
-
-    // If the widget was removed from the tree while the asynchronous platform
-    // message was in flight, we want to discard the reply rather than calling
-    // setState to update our non-existent appearance.
-    if (!mounted) return;
-
-    setState(() {
-      _platformVersion = platformVersion;
-      _isEnable = enable;
-      _hasPermission = permission;
     });
+
+    _deviceSubscription = _blPrinterPlugin.discoverDevices().listen((event) {
+      print('device => $event');
+      devices.add(event);
+    })..onError((e){
+      print('device => $e');
+    });
+  }
+
+  @override
+  void dispose() {
+    _blPrinterPlugin.cancel();
+    _stateSubscription?.cancel();
+    _deviceSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -80,58 +71,156 @@ class _MyAppState extends State<MyApp> {
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: Column(
-          children: [
-            Text('Running on: $_platformVersion '
-                '\nEnable: $_isEnable'
-                '\nStatus: $status'
-                '\nPermisson: $_hasPermission'),
-            Expanded(
-              child: ListView.separated(
-                itemBuilder: (context, index) {
-                  final item = devices[index];
-                  return ListTile(
-                    title: Text(item.name),
-                    subtitle: Text(item.address),
-                    selected: status.device?.address == item.address,
-                    onTap: () {
-                      if (status.status == BluetoothStatus.connected) {
-                        _blPrinterPlugin.disconnect(item);
-                      } else {
-                        _blPrinterPlugin.connect(item);
-                      }
-                    },
-                  );
+        body: PdfPreview(
+          allowSharing: false,
+          canChangePageFormat: false,
+          canChangeOrientation: false,
+          canDebug: false,
+          pdfFileName: 'SpbBibit.pdf',
+          actions: [
+            Visibility(
+              visible: status.status == BluetoothStatus.noPermission,
+              child: ElevatedButton(
+                onPressed: () {
+                  _blPrinterPlugin.openSetting();
                 },
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemCount: devices.length,
+                child: const Text('Grant Permission'),
               ),
             ),
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: () async {
-                    final data = await getTicket(withImage: true);
-                    _blPrinterPlugin.printData(data);
-                  },
-                  child: const Text('print'),
+            Visibility(
+              visible: status.status == BluetoothStatus.disable,
+              child: ElevatedButton(
+                onPressed: () {
+                  _blPrinterPlugin.enableBluetooth();
+                },
+                child: const Text('Enable Bluetooth'),
+              ),
+            ),
+            Visibility(
+              visible: ![BluetoothStatus.disable, BluetoothStatus.noPermission]
+                  .contains(status.status),
+              child: DropdownButtonFormField<BluetoothDevice>(
+                value: status.device,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(
+                    Icons.print,
+                    size: 24,
+                  ),
+                  labelText: "Select Printer Devices",
+                  labelStyle: TextStyle(fontSize: 18.0),
+                  filled: true,
                 ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final data = await printQrSampe(withImage: true);
-                    _blPrinterPlugin.printData(data);
-                  },
-                  child: const Text('print Sample QR'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    _blPrinterPlugin.printTest();
-                  },
-                  child: const Text('print test'),
-                ),
-              ],
-            )
+                items: devices
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (BluetoothDevice? value) async {
+                  if (value != null && value != status.device) {
+                    await _blPrinterPlugin.connect(value);
+                  }
+                },
+              ),
+            ),
+            // DropdownButton(
+            //   hint: const Text('Pilih Bluetooth'),
+            //   items: devices
+            //       .map(
+            //         (e) => DropdownMenuItem(
+            //           value: e.address,
+            //           child: Text(e.name),
+            //         ),
+            //       )
+            //       .toList(),
+            //   onChanged: (item) async {
+            //     if (item != null && item != status.device?.address) {
+            //       final device = devices.firstWhere((e) => e.address == item);
+            //       await _blPrinterPlugin.connect(device);
+            //     }
+            //   },
+            //   value: status.device?.address,
+            // ),
+            IconButton(onPressed: () {}, icon: const Icon(Icons.refresh)),
+            PdfShareAction(
+              filename: 'TestPdf.pdf',
+              subject: 'SRKE-12-123',
+            ),
+            PdfPreviewAction(
+              icon: const Icon(Icons.print_outlined),
+              onPressed: status.device != null
+                  ? (context, image, list) async {
+                      final data = await getTicket(withImage: true);
+                      final imageByte = await image(PdfPageFormat.roll57);
+                      final builder = PrintBuilder(PaperSize.mm58);
+                      List<String> bytes = [];
+                      await for (var page in Printing.raster(
+                          await image(PdfPageFormat.roll57),
+                          dpi: PdfPageFormat.mm)) {
+                        final image = await page.toPng();
+                        // builder.image(image, align: PrintAlign.center, width: 300, height: 300);
+                        // builder.feed(1);
+                        // bytes.add(base64Encode(image));
+                        // await _blPrinterPlugin.printByteData(image);
+                      }
+                      await _blPrinterPlugin.printData(builder.result);
+                      // await _blPrinterPlugin.printData(bytes);
+                      // await _blPrinterPlugin.printByteData(imageByte);
+                    }
+                  : null,
+            ),
           ],
+          allowPrinting: false,
+          build: (PdfPageFormat format) async {
+            final pdf = pw.Document();
+            final bytes = await rootBundle.load('assets/logo.png');
+            final image = pw.MemoryImage(Uint8List.view(bytes.buffer));
+            pdf.addPage(
+              pw.Page(
+                build: (context) => pw.Column(
+                  children: [
+                    pw.Container(
+                      alignment: pw.Alignment.center,
+                      margin: const pw.EdgeInsets.only(
+                        bottom: 3.0 * PdfPageFormat.mm,
+                      ),
+                      padding: const pw.EdgeInsets.only(
+                        bottom: 3.0 * PdfPageFormat.mm,
+                      ),
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(
+                          bottom:
+                              pw.BorderSide(width: 0.8, color: PdfColors.grey),
+                        ),
+                      ),
+                      child: pw.Column(
+                        children: [
+                          pw.Image(image),
+                          pw.Text('PT. Ivo Mas Tunggal'),
+                          pw.Text('SRKE'),
+                          pw.SizedBox(height: 10),
+                          pw.Text('SURAT PENGANTAR BIBIT'),
+                          pw.Text('SRKE/BBT/05/23/AA001'),
+                        ],
+                      ),
+                    ),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('NoPol'),
+                        pw.Text('BG1234AAA'),
+                      ],
+                    ),
+                  ],
+                ),
+                pageFormat: PdfPageFormat.roll57,
+              ),
+            );
+
+            return pdf.save();
+          },
         ),
       ),
     );

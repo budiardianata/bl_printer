@@ -1,7 +1,7 @@
 enum BluetoothStatus{
-  disconnected,
+  idle,
   connecting,
   connected,
   disable,
-  available,
+  noPermission,
 }

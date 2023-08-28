@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'bl_printer_platform_interface.dart';
 import 'model/bluetooth_device.dart';
 import 'model/bluetooth_state.dart';
@@ -7,12 +9,26 @@ class BlPrinter {
     return BlPrinterPlatform.instance.getPlatformVersion();
   }
 
+  Stream<BluetoothDevice> discoverDevices([
+    Duration timeout = const Duration(seconds: 60),
+  ]){
+    return BlPrinterPlatform.instance.discoverDevice(timeout);
+  }
+
   Future<bool> get isBluetoothEnable {
     return BlPrinterPlatform.instance.isBluetoothEnable;
   }
 
   Future<List<BluetoothDevice>> get devices {
     return BlPrinterPlatform.instance.devices;
+  }
+
+  Future<void> openSetting() {
+    return BlPrinterPlatform.instance.openSetting();
+  }
+
+  Future<void> enableBluetooth() {
+    return BlPrinterPlatform.instance.enableBluetooth();
   }
 
   Future<void> connect(BluetoothDevice device) {
@@ -27,7 +43,7 @@ class BlPrinter {
     return BlPrinterPlatform.instance.printTest();
   }
 
-  Stream<BluetoothState> getBluetoothStatus() {
+  Stream<BluetoothState> bluetoothState() {
     return BlPrinterPlatform.instance.getBluetoothStatus();
   }
 
@@ -39,7 +55,7 @@ class BlPrinter {
     return BlPrinterPlatform.instance.cancel();
   }
 
-  Future<void> printByteData(List<int> data) {
+  Future<void> printByteData(Uint8List data) {
     return BlPrinterPlatform.instance.printByteData(data);
   }
 }

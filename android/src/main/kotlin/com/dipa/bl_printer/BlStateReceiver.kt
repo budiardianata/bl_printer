@@ -13,30 +13,38 @@ class BlStateReceiver(
 
     override fun onReceive(context: Context?, intent: Intent?) {
         when (intent?.action) {
-            BluetoothAdapter.ACTION_STATE_CHANGED->{
+            BluetoothAdapter.ACTION_STATE_CHANGED -> {
                 when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                     BluetoothAdapter.STATE_ON -> {
-                        status.invoke(BluetoothState.AVAILABLE, null)
+                        status.invoke(BluetoothState.IDLE, null)
                     }
+
                     BluetoothAdapter.STATE_OFF -> {
                         status.invoke(BluetoothState.DISABLE, null)
                     }
                 }
             }
-            BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED-> {
-                when (intent.getIntExtra(BluetoothAdapter.EXTRA_CONNECTION_STATE, BluetoothAdapter.ERROR)) {
+
+            BluetoothAdapter.ACTION_SCAN_MODE_CHANGED -> {
+                when (intent.getIntExtra(
+                    BluetoothAdapter.EXTRA_CONNECTION_STATE,
+                    BluetoothAdapter.ERROR
+                )) {
                     BluetoothAdapter.STATE_CONNECTED -> {
                         status.invoke(BluetoothState.CONNECTED, null)
                     }
-                    BluetoothAdapter.STATE_CONNECTING->{
+
+                    BluetoothAdapter.STATE_CONNECTING -> {
                         status.invoke(BluetoothState.CONNECTING, null)
                     }
-                    BluetoothAdapter.STATE_DISCONNECTED->{
-                        status.invoke(BluetoothState.DISCONNECTED, null)
+
+                    BluetoothAdapter.STATE_DISCONNECTED -> {
+                        status.invoke(BluetoothState.IDLE, null)
                     }
                 }
             }
-            BluetoothDevice.ACTION_ACL_CONNECTED->{
+
+            BluetoothDevice.ACTION_ACL_CONNECTED -> {
                 val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(
                         BluetoothDevice.EXTRA_DEVICE,
@@ -47,17 +55,18 @@ class BlStateReceiver(
                 }
                 status(BluetoothState.CONNECTED, device)
             }
-            BluetoothDevice.ACTION_ACL_DISCONNECTED->{
-                status.invoke(BluetoothState.DISCONNECTED, null)
+
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                status.invoke(BluetoothState.IDLE, null)
             }
         }
     }
 }
 
-enum class BluetoothState{
-    DISCONNECTED,
+enum class BluetoothState {
+    IDLE,
     CONNECTING,
     CONNECTED,
     DISABLE,
-    AVAILABLE,
+    NO_PERMISSION,
 }

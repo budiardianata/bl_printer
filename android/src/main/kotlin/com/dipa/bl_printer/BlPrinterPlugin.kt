@@ -3,8 +3,11 @@ package com.dipa.bl_printer
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.util.Log
+import androidx.core.app.ActivityCompat
 import com.dipa.bl_printer.permission.PermissionManager
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -25,7 +28,7 @@ import kotlinx.coroutines.launch
 /** BlPrinterPlugin */
 class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamHandler {
     companion object {
-        const val NAMESPACE = "bl_printer"
+        const val NAMESPACE = "com.dipa.bl_printer"
     }
 
     private lateinit var context: Context
@@ -44,6 +47,75 @@ class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamH
 
     private val permissionManager by lazy { PermissionManager() }
 
+    @Synchronized
+    private fun setup(
+        binaryMessenger: BinaryMessenger,
+        context: Context,
+    ) {
+        synchronized(this) {
+            channel = MethodChannel(binaryMessenger, NAMESPACE)
+            channel.setMethodCallHandler(this)
+            stateChannel = EventChannel(binaryMessenger, "$NAMESPACE/states")
+            stateChannel.setStreamHandler(this)
+            controller = BlPrinterController(context)
+        }
+    }
+
+    private fun emitSink(state: BluetoothState, device: BluetoothDevice? = null) {
+        if (state == BluetoothState.IDLE) {
+            fetchDevices()
+        }
+        eventSink?.let {
+            val data = HashMap<String, Any>()
+            data["status"] = state.ordinal
+            if (device != null) {
+                data["devices"] = "${device.name}#${device.address}"
+            }
+            it.success(data)
+        }
+    }
+
+    private fun emitMethodFailure(result: Result, e: Exception) {
+        result.error(
+            e.message ?: e.localizedMessage ?: e.toString(),
+            e.localizedMessage,
+            e.stackTraceToString(),
+        )
+    }
+
+    private fun verifyState(onValid: () -> Unit = {}) {
+        permissionManager.requestPermission(
+            {
+                controller?.let {
+                    if (it.isBluetoothEnable) {
+                        onValid()
+                    }
+                    emitSink(it.initialState)
+                } ?: kotlin.run { emitSink(BluetoothState.NO_PERMISSION) }
+            },
+            { emitSink(BluetoothState.NO_PERMISSION) },
+        )
+    }
+
+    private fun requestEnableBluetooth() {
+        val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+        binding?.let {
+            ActivityCompat.startActivity(
+                it.activity,
+                enableBtIntent,
+                null
+            )
+        }
+    }
+
+    private fun fetchDevices() {
+        val devices = controller?.getBluetoothList()
+        devices?.forEach { device ->
+            Log.d(NAMESPACE, "Devices: $device")
+            channel.invokeMethod("ScanResult", device)
+        }
+    }
+
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         context = flutterPluginBinding.applicationContext
         setup(flutterPluginBinding.binaryMessenger, flutterPluginBinding.applicationContext)
@@ -52,7 +124,23 @@ class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamH
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
             "getPlatformVersion" -> result.success("Android ${Build.VERSION.RELEASE}")
+
             "isBluetoothEnable" -> result.success(controller?.isBluetoothEnable == true)
+
+            "enableBluetooth" -> {
+                requestEnableBluetooth()
+                result.success(null)
+            }
+
+            "openSetting" -> {
+                if (permissionManager.canRequestPermission()) {
+                   verifyState(::fetchDevices)
+                } else {
+                    permissionManager.openSettingsPermission()
+                }
+                result.success(null)
+            }
+
             "getConnectedDevice" -> {
                 val selected = controller?.getConnectedDevice
                 if (selected != null) {
@@ -69,6 +157,10 @@ class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamH
             "devices" -> {
                 controller?.let {
                     val devices = it.getBluetoothList()
+                    devices.forEach { device ->
+                        Log.d(NAMESPACE, "Devices: $device")
+                        channel.invokeMethod("ScanResult", device)
+                    }
                     result.success(devices)
                 } ?: kotlin.run {
                     emitMethodFailure(result, Exception("Controller Not initialize"))
@@ -79,6 +171,7 @@ class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamH
                 try {
                     val address = call.argument<String>("address")
                         ?: throw Exception("Address Cannot be null")
+                    emitSink(BluetoothState.CONNECTING, null)
                     controller?.let {
                         coroutineScope.launch {
                             it.connectToDevice(
@@ -150,15 +243,12 @@ class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamH
             }
 
             "printBytes" -> {
-                val data = call.argument<List<Int>>("data")
-                    ?: throw Exception("print data cannot be empty")
+                val bytes = call.argument<ByteArray>("data")
+                if (bytes == null) {
+                    emitMethodFailure(result, Exception("data cannot be null"))
+                    return
+                }
                 coroutineScope.launch {
-
-                    var bytes: ByteArray = "\n".toByteArray()
-                    data.forEach {
-                        bytes += it.toByte()
-                    }
-
                     controller?.printByte(bytes) { e ->
                         if (e == null) {
                             result.success(true)
@@ -166,6 +256,7 @@ class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamH
                             emitMethodFailure(result, e)
                         }
                     }
+
                 }
             }
 
@@ -183,75 +274,32 @@ class BlPrinterPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, StreamH
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         this.binding = binding
+        permissionManager.updateActivity(binding.activity)
         binding.addRequestPermissionsResultListener(permissionManager)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {}
 
-    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {}
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        this.binding = binding
+        permissionManager.updateActivity(binding.activity)
+        binding.addRequestPermissionsResultListener(permissionManager)
+    }
 
     override fun onDetachedFromActivity() {
         binding?.removeRequestPermissionsResultListener(permissionManager)
         this.binding = null
     }
 
-    private fun setup(
-        binaryMessenger: BinaryMessenger,
-        context: Context,
-    ) {
-        synchronized(this) {
-            channel = MethodChannel(binaryMessenger, "$NAMESPACE/methods")
-            channel.setMethodCallHandler(this)
-            stateChannel = EventChannel(binaryMessenger, "$NAMESPACE/states")
-            stateChannel.setStreamHandler(this)
-            controller = BlPrinterController(context)
-        }
-    }
-
-    private fun emitSink(state: BluetoothState, device: BluetoothDevice? = null) {
-        eventSink?.let {
-            val data = HashMap<String, Any>()
-            data["status"] = state.ordinal
-            if (device != null) {
-                data["devices"] = "${device.name}#${device.address}"
-            }
-
-            it.success(data)
-        }
-    }
-
-    private fun emitMethodFailure(result: Result, e: Exception) {
-        result.error(
-            e.message ?: e.localizedMessage ?: e.toString(),
-            e.localizedMessage,
-            e.stackTraceToString(),
-        )
-    }
-
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-        val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED).also {
-            it.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED)
-            it.addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
-            it.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+        eventSink = events
+        val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED).apply {
+            addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
         }
-        binding?.let {
-            permissionManager.requestPermission(
-                it.activity,
-                {
-                    eventSink = events
-                    val state = controller?.initialState ?: BluetoothState.DISABLE
-                    emitSink(state)
-                    context.registerReceiver(blStateReceiver, filter)
-                },
-                { error ->
-                    events?.error(
-                        "Permission Not Granted",
-                        error.message ?: error.localizedMessage,
-                        error.toString(),
-                    )
-                },
-            )
-        }
+        context.registerReceiver(blStateReceiver, filter)
+        verifyState(::fetchDevices)
     }
 
     override fun onCancel(arguments: Any?) {

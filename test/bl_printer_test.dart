@@ -63,6 +63,30 @@ class MockBlPrinterPlatform with MockPlatformInterfaceMixin
     // TODO: implement cancel
     throw UnimplementedError();
   }
+
+  @override
+  Stream<BluetoothDevice> discoverDevice([Duration timeout = const Duration(seconds: 7)]) {
+    // TODO: implement discoverDevice
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> start() {
+    // TODO: implement start
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> enableBluetooth() {
+    // TODO: implement enableBluetooth
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> openSetting() {
+    // TODO: implement openSetting
+    throw UnimplementedError();
+  }
 }
 
 void main() {

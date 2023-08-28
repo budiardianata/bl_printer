@@ -1,23 +1,81 @@
+import 'dart:async';
+
 import 'package:bl_printer/src/model/bluetooth_state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:rxdart/rxdart.dart';
 
 import 'bl_printer_platform_interface.dart';
 import 'bluetooth_status.dart';
 import 'model/bluetooth_device.dart';
 
-const String namespace = "bl_printer";
+const String namespace = "com.dipa.bl_printer";
 
 /// An implementation of [BlPrinterPlatform] that uses method channels.
 class MethodChannelBlPrinter extends BlPrinterPlatform {
-  /// The method channel used to interact with the native platform.
-  ///
+  MethodChannelBlPrinter() {
+    methodChannel.setMethodCallHandler((MethodCall call) {
+      _methodStreamController.add(call);
+      return Future(() => null);
+    });
+  }
+
+  final _methodStreamController = StreamController<MethodCall>.broadcast();
+
+  Stream<MethodCall> get _methodStream => _methodStreamController.stream;
+
   @visibleForTesting
-  final methodChannel = const MethodChannel('$namespace/methods');
+  final methodChannel = const MethodChannel(namespace);
 
   final _stateChannel = const EventChannel('$namespace/states');
 
+  final _stopScanPill = PublishSubject();
+
   Stream<BluetoothState>? _serviceStatusStream;
+
+  @override
+  Future<void> start() async {
+    await methodChannel.invokeMethod('start');
+  }
+
+  @override
+  Stream<BluetoothDevice> discoverDevice([
+    Duration timeout = const Duration(seconds: 60),
+  ]) async* {
+    final killStreams = <Stream>[];
+    killStreams.add(_stopScanPill);
+    killStreams.add(Rx.timer(null, timeout));
+    final stream = _methodStream
+        .takeWhile((m) => m.method == "ScanResult" && m.arguments is String)
+        .map((m) => _toDevice(m.arguments as String))
+        .takeUntil(Rx.merge(killStreams))
+        .doOnDone(_stopScan);
+    final tempDevice = <BluetoothDevice>[];
+    await for (BluetoothDevice device in stream) {
+      if (tempDevice.contains(device)) continue;
+      tempDevice.add(device);
+      yield device;
+    }
+  }
+
+  BluetoothDevice _toDevice(String data){
+    List<String> info = data.split("#");
+    return BluetoothDevice(name: info[0], address: info[1]);
+  }
+
+  FutureOr<void> _stopScan() async {
+    _stopScanPill.add(null);
+  }
+
+  @override
+  Future<void> openSetting(){
+    return methodChannel.invokeMethod('openSetting');
+  }
+
+  @override
+  Future<void> enableBluetooth() {
+    return methodChannel.invokeMethod('enableBluetooth');
+  }
 
   @override
   Future<String?> getPlatformVersion() async {
@@ -79,7 +137,7 @@ class MethodChannelBlPrinter extends BlPrinterPlatform {
   }
 
   @override
-  Future<void> printByteData(List<int> data) async {
+  Future<void> printByteData(Uint8List data) async {
     try {
       await methodChannel.invokeMethod('printBytes', {
         "data": data,
@@ -125,5 +183,6 @@ class MethodChannelBlPrinter extends BlPrinterPlatform {
   @override
   Future<void> cancel() async {
     await methodChannel.invokeMethod('close');
+    _methodStreamController.close();
   }
 }
